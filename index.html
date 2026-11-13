@@ -251,6 +251,11 @@
 
     .survey-card-btn { transition: transform 0.08s ease, box-shadow 0.08s ease; }
     .survey-card-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #0f0b29 !important; }
+    /* 📱 모바일 확대 방지: 더블탭 확대·길게 눌러 텍스트 선택/메뉴 막기 */
+    html, body, * { touch-action: manipulation; }
+    html, body { -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+    body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+    input, textarea { -webkit-user-select: text; user-select: text; }
   </style>
 </head>
 
@@ -7993,6 +7998,27 @@
         });
       };
     }
+
+    // 📱 iOS 사파리는 user-scalable=no를 무시해서, 더블탭·핀치 확대를 직접 막는다
+    (function preventMobileZoom(){
+      ['gesturestart','gesturechange','gestureend'].forEach(ev =>
+        document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+      document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+      document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+      // 빠른 연타(실링 왁스 등)에서 두 번째 탭이 확대로 먹히지 않도록: 기본 동작은 막고 클릭은 직접 전달
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', e => {
+        const now = Date.now();
+        const t = e.target;
+        const isField = t && t.closest && t.closest('input, textarea, select, [contenteditable]');
+        if (now - lastTouchEnd <= 350 && !isField) {
+          e.preventDefault();
+          if (t && typeof t.click === 'function') t.click();
+          else if (t && t.parentElement) t.parentElement.click();
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+    })();
 
     window.onload = () => {
       renderTitleScreen();
