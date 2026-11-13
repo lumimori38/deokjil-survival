@@ -2316,6 +2316,7 @@
       year: 1,
       month: 1,
       turnCount: 0,
+      styleG: { rapport: 0, influence: 0, agency: 0, rest: 0 },
       stats: {
         rapport: 20,
         influence: 10,
@@ -2640,6 +2641,10 @@
     }
 
     function applyDeltas(deltas = {}, msg = '') {
+      // 엔딩용 플레이 성향 기록: 7년 동안 어떤 걸 많이 쌓았는지 (스탯 100 상한과 무관하게 누적)
+      if (!gameState.styleG) gameState.styleG = { rapport: 0, influence: 0, agency: 0, rest: 0 };
+      ['rapport', 'influence', 'agency'].forEach(k => { if (deltas[k] > 0) gameState.styleG[k] += deltas[k]; });
+      if (deltas.stress < 0) gameState.styleG.rest += -deltas.stress;
       const s = gameState.stats;
       const changes = [];
 
@@ -8240,6 +8245,8 @@
       sound.fanfare();
       gameState.phase = 'ENDING';
       statDashboard.classList.add('hidden');
+      headerLocName.innerText = '📍 7년 덕질 결산';
+      document.getElementById('timeline-badge').innerText = '🏁 7년 덕질 완주';
       questBanner.classList.add('hidden');
       mobileController.classList.add('hidden');
       ['dialog-modal', 'phone-modal', 'mg-modal', 'random-mission-modal'].forEach(id => document.getElementById(id).classList.add('hidden'));
@@ -8252,25 +8259,39 @@
       const streams = (1200 + s.influence * 180 + s.passion * 90).toLocaleString();
       const fanSigns = Math.max(1, Math.round(s.rapport / 6));
       const spent = 300 + Math.round((s.influence + s.rapport + s.passion) * 9);
+      // 엔딩명: 'ENDING' 라벨과 본제목을 나누고, 쉼표·말줄임표 뒤에서 자연스럽게 줄바꿈
+      const tm = F(ending.title).match(/^★\s*((?:SECRET |BAD )?ENDING):\s*(.*)$/);
+      const titleParts = {
+        kind: tm ? tm[1] : 'ENDING',
+        main: (tm ? tm[2] : F(ending.title)).replace(/(\.\.\.|,)\s+/, '$1<br>')
+      };
+      const iconParts = String(ending.icon).split('⇄').map(t => t.trim());
 
       viewport.innerHTML = `
         <div class="flex-1 flex flex-col p-3 overflow-y-auto max-w-xl mx-auto w-full break-keep" style="background:${ending.bg}">
           <div class="text-center mb-3">
-            <span class="bg-[#0f0b29] text-[#ffe600] font-black text-[10px] px-2 py-0.5 rounded-full inline-block mb-1">FINAL DEOKJIL REPORT · ENDING ${ending.no}/8</span>
-            <div class="text-[11px] font-black text-gray-600 mb-0.5">${josa(getMyName(), '와')} ${gameState.bias.name}의 7년</div>
-            <h2 class="text-xl sm:text-2xl font-black leading-snug" style="color:${ending.color}">${F(ending.title)}</h2>
-            <p class="text-[11px] text-gray-700 font-bold mt-1">${F(ending.subtitle)}</p>
+            <span class="bg-[#0f0b29] text-[#ffe600] font-black text-[10px] px-2 py-0.5 rounded-full inline-block mb-1.5">FINAL DEOKJIL REPORT · ENDING ${ending.no}/8</span>
+            <div class="text-[11px] font-black text-gray-600 mb-1">${josa(getMyName(), '와')} ${gameState.bias.name}의 7년</div>
+            <div class="inline-block text-[10px] font-black tracking-wider px-2 py-0.5 rounded border-2 border-[#0f0b29] mb-1" style="background:${ending.color}; color:#fff">★ ${titleParts.kind}</div>
+            <h2 class="text-[22px] sm:text-2xl font-black leading-snug px-2" style="color:${ending.color}; text-wrap:balance; word-break:keep-all">${titleParts.main}</h2>
+            <p class="text-[11px] text-gray-700 font-bold mt-1.5 px-3 leading-snug" style="text-wrap:balance; word-break:keep-all">${F(ending.subtitle)}</p>
           </div>
 
-          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 flex items-center justify-center gap-4 mb-3 shadow-[3px_3px_0_#0f0b29]">
-            <div class="flex flex-col items-center">
-              <canvas id="ending-bias-canvas" width="48" height="48" class="w-12 h-12 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1"></canvas>
-              <span class="text-[11px] font-black text-rose-600">${gameState.bias.name}</span>
+          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl px-2 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-1 mb-3 shadow-[3px_3px_0_#0f0b29]">
+            <div class="flex flex-col items-center text-center">
+              <canvas id="ending-bias-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>
+              <span class="text-[12px] font-black text-rose-600 leading-tight">${gameState.bias.name}</span>
+              <span class="text-[9px] font-bold text-gray-500">내 최애</span>
             </div>
-            <div class="text-xl font-black">${ending.icon}</div>
-            <div class="flex flex-col items-center">
-              <canvas id="ending-player-canvas" width="48" height="48" class="w-12 h-12 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1"></canvas>
-              <span class="text-[11px] font-black text-gray-800">${getMyName()} (7년차 덕후)</span>
+            <div class="flex items-center justify-center gap-1 px-1">
+              <span class="text-2xl leading-none">${iconParts[0]}</span>
+              <span class="text-[11px] font-black text-gray-400 tracking-tighter">·⇄·</span>
+              <span class="text-2xl leading-none">${iconParts[1] || ''}</span>
+            </div>
+            <div class="flex flex-col items-center text-center">
+              <canvas id="ending-player-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>
+              <span class="text-[12px] font-black text-gray-800 leading-tight">${getMyName()}</span>
+              <span class="text-[9px] font-bold text-gray-500">7년차 덕후</span>
             </div>
           </div>
 
@@ -8351,14 +8372,32 @@
      */
     function pickEnding(s) {
       const E = ENDINGS;
+      // 1) 위험 엔딩: 스탯이 바닥/한계면 먼저
       if (s.agency <= 5) return E.BLACKLIST;
       if (s.stress >= 70) return E.BURNOUT;
       if (s.money <= 5) return E.BANKRUPT;
-      if (s.rapport >= 75 && s.agency >= 45 && s.stress <= 40) return E.SECRET;
-      if (s.agency >= 60) return E.STAFF;
-      if (s.influence >= 70 && s.stress <= 60) return E.LEGEND;
-      if (s.rapport >= 55 && s.influence >= 45 && s.agency >= 30 && s.stress <= 55) return E.RENEWAL;
-      return E.LONGRUN;
+      const G = gameState.styleG || { rapport: 0, influence: 0, agency: 0 };
+      // (이전 저장본처럼 성향 기록이 거의 없으면 예전 방식으로 판정)
+      if (G.rapport + G.influence + G.agency < 300) {
+        if (s.rapport >= 75 && s.agency >= 45 && s.stress <= 40) return E.SECRET;
+        if (s.agency >= 60) return E.STAFF;
+        if (s.influence >= 70 && s.stress <= 60) return E.LEGEND;
+        if (s.rapport >= 55 && s.influence >= 45) return E.RENEWAL;
+        return E.LONGRUN;
+      }
+      // 2) 7년 동안 가장 공들인 방향 (평균적인 플레이를 1.0으로 맞춘 비율)
+      const score = [
+        ['RENEWAL', G.rapport / 900],    // 최애 곁 → 재계약의 증인
+        ['LEGEND', G.influence / 1240],  // 팬덤 활동 → 레전드 홈마
+        ['STAFF', G.agency / 650]        // 스탭·소속사 → 소속사 팀장
+      ].sort((a, b) => b[1] - a[1]);
+      const [top, tv] = score[0];
+      const gap = tv - score[1][1];
+      // 3) 최애에게 압도적으로 공들이고 선도 지킨 사람만 시크릿
+      if (top === 'RENEWAL' && tv >= 1.12 && s.rapport >= 85 && s.agency >= 40 && s.stress <= 45) return E.SECRET;
+      // 4) 어느 쪽에도 치우치지 않았거나 열정이 식었으면 롱런 팬
+      if (gap < 0.035 || s.passion < 50) return E.LONGRUN;
+      return E[top];
     }
 
     const ENDINGS = {
@@ -8422,7 +8461,7 @@
       RENEWAL: {
         no: 4, icon: '🤝 ⇄ 📝', color: '#7c3aed', bg: '#f5f3ff',
         title: '★ ENDING: 7년 재계약의 증인',
-        subtitle: '마의 7년을 넘긴 {G}, 그 곁을 끝까지 지킨 올라운더 팬',
+        subtitle: '마의 7년을 넘긴 {G}, 그 곁을 끝까지 지켜본 최애의 증인',
         badge: '🏅 팬덤 올라운더',
         rank: '{G} 2막을 연 개국공신',
         story: [
@@ -8540,7 +8579,9 @@
       gameState.bias = null;
       gameState.myName = '나';
       gameState.feeNoticed = false;
-      GROUPS.forEach(g => g.members.forEach(m => { if (m.defaultName) m.name = m.defaultName; }));
+      gameState.hintFlags = {};
+      gameState.styleG = { rapport: 0, influence: 0, agency: 0, rest: 0 };
+      GROUPS.forEach(g => { if (g.defaultName) g.name = g.defaultName; g.members.forEach(m => { if (m.defaultName) m.name = m.defaultName; }); });
       gameState.currentMapId = 'MY_ROOM';
       gameState.player.x = 320;
       gameState.player.y = 240;
@@ -8596,7 +8637,7 @@
      */
     const SAVE_KEY = 'deokjil_survival_save_v1';
     const SAVE_FIELDS = ['year', 'month', 'turnCount', 'stats', 'customLook', 'currentQuest', 'streaming', 'bubbleMessages',
-      'twitterPosts', 'hasUnreadBubble', 'userAnswers', 'currentMapId', 'scenarioHistory', 'myName', 'feeNoticed', 'hintFlags'];
+      'twitterPosts', 'hasUnreadBubble', 'userAnswers', 'currentMapId', 'scenarioHistory', 'myName', 'feeNoticed', 'hintFlags', 'styleG'];
 
     function readSave() {
       try {
