@@ -6578,7 +6578,7 @@ async function lumiSave(el, bg, btn) {
     v.classList.add("flex");
 }
 function renderEnding() {
-    deleteSave();
+    if (!window.__lumiForceEnding) deleteSave();
     sound.fanfare();
     gameState.phase = "ENDING";
     statDashboard.classList.add("hidden");
@@ -6588,7 +6588,7 @@ function renderEnding() {
     mobileController.classList.add("hidden");
     [ "dialog-modal", "phone-modal", "mg-modal", "random-mission-modal" ].forEach(id => document.getElementById(id).classList.add("hidden"));
     const s = gameState.stats;
-    const ending = pickEnding(s);
+    const ending = window.__lumiForceEnding && Object.values(ENDINGS).find(e => e.no === window.__lumiForceEnding) || pickEnding(s);
     const F = t => personalizeYou(fillText(t));
     const bubbleCount = gameState.bubbleMessages.filter(m => m.sender === "bias").length;
     const albums = 40 + Math.round(s.influence * 6 + s.passion * 3);
@@ -6766,6 +6766,10 @@ const ENDINGS = {
 };
 function resetGame() {
     sound.click();
+    if (window.__lumiForceEnding) {
+        window.__lumiForceEnding = 0;
+        history.replaceState(null, "", location.pathname);
+    }
     gameState.phase = "TITLE";
     gameState.year = 1;
     gameState.month = 1;
@@ -7228,6 +7232,18 @@ window.onload = () => {
     attachBadTwists();
     renderTitleScreen();
 };
+(function() {
+    const n = parseInt(new URLSearchParams(location.search).get("ending"), 10);
+    if (!(n >= 1 && n <= 8)) return;
+    setTimeout(() => {
+        window.__lumiForceEnding = n;
+        if (!gameState.group) {
+            gameState.group = GROUPS[0];
+            gameState.bias = GROUPS[0].members[0];
+        }
+        renderEnding();
+    }, 300);
+})();
 </script>
 <div id="lumi-imgv" class="hidden fixed inset-0 z-[200] bg-black/85 flex-col items-center justify-center p-4 gap-3">
   <p class="text-white text-xs font-bold">이미지를 꾹 눌러 저장하세요</p>
