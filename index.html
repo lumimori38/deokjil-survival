@@ -26,7 +26,6 @@
   <meta name="twitter:site" content="@lumimori38">
   <meta name="twitter:creator" content="@lumimori38">
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="html2canvas.min.js" defer></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DungGeunMo&family=Noto+Sans+KR:wght@700;900&display=swap" rel="stylesheet">
@@ -6537,27 +6536,236 @@ function lumiToast(html, btn) {
     clearTimeout(t._h);
     t._h = setTimeout(() => t.classList.remove("show"), 2e3);
 }
-async function lumiCopy(text, btn) {
-    if (await lumiCopyText(text)) {
-        lumiFlash(btn, "복사 완료!");
-        lumiToast("결과가 복사됐어요!", btn);
-    } else showCenterPopup("복사에 실패했어요. 주소를 직접 복사해 주세요.");
-}
-async function lumiSave(el, bg, btn) {
-    if (!window.html2canvas) {
-        showCenterPopup("이미지를 준비 중이에요. 잠시 후 다시 눌러 주세요.");
-        return;
+function lumiWrap(ctx, text, maxW) {
+    const words = String(text).replace(/\s+/g, " ").trim().split(" ");
+    const lines = [];
+    let cur = "";
+    const push = w => {
+        if (ctx.measureText(w).width <= maxW) return w;
+        let part = "";
+        for (const ch of w) {
+            if (ctx.measureText(part + ch).width > maxW) {
+                lines.push(part);
+                part = ch;
+            } else part += ch;
+        }
+        return part;
+    };
+    for (const w of words) {
+        const t = cur ? cur + " " + w : w;
+        if (ctx.measureText(t).width <= maxW) cur = t; else {
+            if (cur) lines.push(cur);
+            cur = push(w);
+        }
     }
+    if (cur) lines.push(cur);
+    return lines;
+}
+function lumiClamp(ctx, lines, max, maxW) {
+    if (lines.length <= max) return lines;
+    const out = lines.slice(0, max);
+    let last = out[max - 1];
+    while (last && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+    out[max - 1] = last + "…";
+    return out;
+}
+function lumiRound(ctx, x, y, w, h, r, fill, stroke, lw, shadow) {
+    const path = () => {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+    };
+    if (shadow) {
+        ctx.save();
+        ctx.translate(shadow, shadow);
+        path();
+        ctx.fillStyle = "#0f0b29";
+        ctx.fill();
+        ctx.restore();
+    }
+    path();
+    if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+    }
+    if (stroke) {
+        ctx.lineWidth = lw || 6;
+        ctx.strokeStyle = stroke;
+        ctx.stroke();
+    }
+}
+async function lumiDrawCard(d) {
+    const FONT = "'DungGeunMo', 'Noto Sans KR', sans-serif";
+    try {
+        await Promise.all([ document.fonts.load("40px DungGeunMo"), document.fonts.load('900 40px "Noto Sans KR"') ]);
+    } catch (e) {}
+    const W = 1080, PAD = 70, IW = W - PAD * 2;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = 2400;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "center";
+    const f = (sz, bold) => {
+        ctx.font = (bold ? "bold " : "") + sz + "px " + FONT;
+    };
+    ctx.fillStyle = d.bg;
+    ctx.fillRect(0, 0, W, c.height);
+    let y = 70;
+    f(28, true);
+    const pill = "FINAL DEOKJIL REPORT · ENDING " + d.no + "/8";
+    const pw = ctx.measureText(pill).width + 60;
+    lumiRound(ctx, (W - pw) / 2, y, pw, 56, 28, "#0f0b29");
+    ctx.fillStyle = "#ffe600";
+    ctx.fillText(pill, W / 2, y + 14);
+    y += 86;
+    f(30, true);
+    ctx.fillStyle = "#4b5563";
+    ctx.fillText(josa(getMyName(), "와") + " " + gameState.bias.name + "의 7년", W / 2, y);
+    y += 54;
+    f(28, true);
+    const kind = "★ " + d.kind;
+    const kw = ctx.measureText(kind).width + 44;
+    lumiRound(ctx, (W - kw) / 2, y, kw, 54, 8, d.color, "#0f0b29", 5);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(kind, W / 2, y + 13);
+    y += 84;
+    f(66, true);
+    ctx.fillStyle = d.color;
+    for (const l of lumiClamp(ctx, lumiWrap(ctx, d.title, IW), 2, IW)) {
+        ctx.fillText(l, W / 2, y);
+        y += 82;
+    }
+    y += 6;
+    f(30, true);
+    ctx.fillStyle = "#374151";
+    for (const l of lumiClamp(ctx, lumiWrap(ctx, d.subtitle, IW - 40), 2, IW - 40)) {
+        ctx.fillText(l, W / 2, y);
+        y += 44;
+    }
+    y += 30;
+    const ch = 330;
+    lumiRound(ctx, PAD, y, IW, ch, 34, "#fff", "#0f0b29", 7, 10);
+    const sp = 168, sy = y + 38;
+    const drawChar = (cx, opts, name, sub, nameColor) => {
+        lumiRound(ctx, cx - sp / 2 - 10, sy - 10, sp + 20, sp + 20, 18, "#fff1f5", "#0f0b29", 5);
+        drawPixelSprite(ctx, cx - sp / 2, sy, sp, opts);
+        ctx.textAlign = "center";
+        f(34, true);
+        ctx.fillStyle = nameColor;
+        ctx.fillText(name, cx, sy + sp + 26);
+        f(24, true);
+        ctx.fillStyle = "#6b7280";
+        ctx.fillText(sub, cx, sy + sp + 70);
+    };
+    drawChar(PAD + 190, {
+        hair: gameState.bias.hair,
+        cloth: gameState.bias.cloth,
+        type: "idol"
+    }, gameState.bias.name, "내 최애", "#e11d48");
+    drawChar(W - PAD - 190, {
+        hair: gameState.customLook.hair,
+        cloth: gameState.customLook.cloth,
+        lightColor: gameState.customLook.lightColor,
+        accessory: "lightstick",
+        type: "female_fan"
+    }, getMyName(), "7년차 덕후", "#1f2937");
+    ctx.font = "64px sans-serif";
+    ctx.fillStyle = "#000";
+    ctx.fillText(d.icons[0] || "", W / 2 - 62, y + 120);
+    ctx.fillText(d.icons[1] || "", W / 2 + 62, y + 120);
+    f(26, true);
+    ctx.fillStyle = "#9ca3af";
+    ctx.fillText("⇄", W / 2, y + 140);
+    y += ch + 44;
+    f(28, true);
+    const chip = (txt, bg, fg, border) => {
+        const w = Math.min(ctx.measureText(txt).width + 44, IW);
+        return {
+            txt: txt,
+            bg: bg,
+            fg: fg,
+            border: border,
+            w: w
+        };
+    };
+    const c1 = chip(d.badge, d.color, "#fff"), c2 = chip("덕후 칭호: " + d.rank, "#ffe600", "#0f0b29", "#0f0b29");
+    const drawChip = (o, x) => {
+        lumiRound(ctx, x, y, o.w, 54, 27, o.bg, o.border, 3);
+        ctx.fillStyle = o.fg;
+        ctx.textAlign = "center";
+        ctx.fillText(lumiClamp(ctx, [ o.txt ], 1, o.w - 40)[0], x + o.w / 2, y + 13);
+    };
+    if (c1.w + c2.w + 16 <= IW) {
+        const x0 = (W - (c1.w + c2.w + 16)) / 2;
+        drawChip(c1, x0);
+        drawChip(c2, x0 + c1.w + 16);
+        y += 84;
+    } else {
+        drawChip(c1, (W - c1.w) / 2);
+        y += 68;
+        drawChip(c2, (W - c2.w) / 2);
+        y += 84;
+    }
+    f(30, false);
+    const bl = lumiClamp(ctx, lumiWrap(ctx, "“" + d.bubble + "”", IW - 90), 4, IW - 90);
+    const bh = 96 + bl.length * 46 + 30;
+    lumiRound(ctx, PAD, y, IW, bh, 30, "#e0f2fe", "#0f0b29", 6, 8);
+    f(28, true);
+    ctx.fillStyle = "#0369a1";
+    ctx.textAlign = "left";
+    ctx.fillText("💬 " + gameState.bias.name + "의 마지막 버블", PAD + 44, y + 34);
+    f(30, false);
+    ctx.fillStyle = "#0f172a";
+    let by = y + 92;
+    for (const l of bl) {
+        ctx.fillText(l, PAD + 44, by);
+        by += 46;
+    }
+    ctx.textAlign = "center";
+    y += bh + 44;
+    const st = d.stats, cells = [ [ "💖 라포", st.rapport, "#be123c" ], [ "🎵 네임드", st.influence, "#0e7490" ], [ "🏢 스탭 신뢰", st.agency, "#047857" ], [ "💣 멘붕", st.stress + "%", "#7e22ce" ], [ "💎 남은 자금", st.money + "만", "#b45309" ], [ "🔥 열정", st.passion, "#be123c" ] ];
+    const cw = (IW - 2 * 16) / 3, chh = 120;
+    cells.forEach((cl, i) => {
+        const cx = PAD + i % 3 * (cw + 16), cy = y + Math.floor(i / 3) * (chh + 16);
+        lumiRound(ctx, cx, cy, cw, chh, 20, "#fff", "#0f0b29", 4);
+        f(24, true);
+        ctx.fillStyle = "#6b7280";
+        ctx.fillText(cl[0], cx + cw / 2, cy + 22);
+        f(40, true);
+        ctx.fillStyle = cl[2];
+        ctx.fillText(String(cl[1]), cx + cw / 2, cy + 60);
+    });
+    y += chh * 2 + 16 + 56;
+    ctx.strokeStyle = "rgba(15,11,41,.18)";
+    ctx.setLineDash([ 10, 10 ]);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(PAD, y);
+    ctx.lineTo(W - PAD, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    y += 30;
+    f(26, true);
+    ctx.fillStyle = "rgba(15,11,41,.5)";
+    ctx.fillText("최애 덕질 생존기 × 루미 오락실 · @lumimori38", W / 2, y);
+    y += 70;
+    const out = document.createElement("canvas");
+    out.width = W;
+    out.height = y;
+    out.getContext("2d").drawImage(c, 0, 0);
+    return out;
+}
+async function lumiSaveCard(d, btn) {
     lumiFlash(btn, "이미지 만드는 중…");
     let url;
     try {
-        if (document.fonts && document.fonts.ready) await document.fonts.ready;
-        const c = await html2canvas(el, {
-            scale: 2,
-            backgroundColor: bg || "#ffffff",
-            useCORS: true
-        });
-        url = c.toDataURL("image/png");
+        url = (await lumiDrawCard(d)).toDataURL("image/png");
     } catch (e) {
         showCenterPopup("이미지 만들기에 실패했어요. 화면을 캡처해 주세요.");
         return;
@@ -6565,7 +6773,7 @@ async function lumiSave(el, bg, btn) {
     if (!LUMI_IOS && !LUMI_INAPP) {
         const a = document.createElement("a");
         a.href = url;
-        a.download = "deokjil-ending.png";
+        a.download = "deokjil-ending-" + d.no + ".png";
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -6576,6 +6784,13 @@ async function lumiSave(el, bg, btn) {
     document.getElementById("lumi-imgv-img").src = url;
     v.classList.remove("hidden");
     v.classList.add("flex");
+    btn.textContent = btn.dataset.l || btn.textContent;
+}
+async function lumiCopy(text, btn) {
+    if (await lumiCopyText(text)) {
+        lumiFlash(btn, "복사 완료!");
+        lumiToast("결과가 복사됐어요!", btn);
+    } else showCenterPopup("복사에 실패했어요. 주소를 직접 복사해 주세요.");
 }
 function renderEnding() {
     if (!window.__lumiForceEnding) deleteSave();
@@ -6601,7 +6816,7 @@ function renderEnding() {
         main: (tm ? tm[2] : F(ending.title)).replace(/(\.\.\.|,)\s+/, "$1<br>")
     };
     const iconParts = String(ending.icon).split("⇄").map(t => t.trim());
-    viewport.innerHTML = `\n        <div class="flex-1 flex flex-col p-3 overflow-y-auto max-w-xl mx-auto w-full break-keep" style="background:${ending.bg}">\n          <div id="ending-card" class="rounded-2xl px-1 pt-2 pb-2 mb-3" style="background:${ending.bg}">\n          <div class="text-center mb-3">\n            <span class="bg-[#0f0b29] text-[#ffe600] font-black text-[10px] px-2 py-0.5 rounded-full inline-block mb-1.5">FINAL DEOKJIL REPORT · ENDING ${ending.no}/8</span>\n            <div class="text-[11px] font-black text-gray-600 mb-1">${josa(getMyName(), "와")} ${gameState.bias.name}의 7년</div>\n            <div class="inline-block text-[10px] font-black tracking-wider px-2 py-0.5 rounded border-2 border-[#0f0b29] mb-1" style="background:${ending.color}; color:#fff">★ ${titleParts.kind}</div>\n            <h2 class="text-[22px] sm:text-2xl font-black leading-snug px-2" style="color:${ending.color}; text-wrap:balance; word-break:keep-all">${titleParts.main}</h2>\n            <p class="text-[11px] text-gray-700 font-bold mt-1.5 px-3 leading-snug" style="text-wrap:balance; word-break:keep-all">${F(ending.subtitle)}</p>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl px-2 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-1 mb-2 shadow-[3px_3px_0_#0f0b29]">\n            <div class="flex flex-col items-center text-center">\n              <canvas id="ending-bias-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>\n              <span class="text-[12px] font-black text-rose-600 leading-tight">${gameState.bias.name}</span>\n              <span class="text-[9px] font-bold text-gray-500">내 최애</span>\n            </div>\n            <div class="flex items-center justify-center gap-1 px-1">\n              <span class="text-2xl leading-none">${iconParts[0]}</span>\n              <span class="text-[11px] font-black text-gray-400 tracking-tighter">·⇄·</span>\n              <span class="text-2xl leading-none">${iconParts[1] || ""}</span>\n            </div>\n            <div class="flex flex-col items-center text-center">\n              <canvas id="ending-player-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>\n              <span class="text-[12px] font-black text-gray-800 leading-tight">${getMyName()}</span>\n              <span class="text-[9px] font-bold text-gray-500">7년차 덕후</span>\n            </div>\n          </div>\n          <div class="text-center text-[11px] font-black text-gray-700 mb-2">덕후 칭호: ${F(ending.rank)}</div>\n          <div class="text-center text-[11px] font-bold pt-2 border-t border-dashed border-[#0f0b29]/20" style="color:rgba(15,11,41,.5)">최애 덕질 생존기 × 루미 오락실 · @lumimori38</div>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 sm:p-4 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs text-gray-800 leading-relaxed font-bold">\n            <div class="flex flex-wrap gap-1 mb-2">\n              <span class="inline-block text-white text-[10px] px-2 py-0.5 rounded-full" style="background:${ending.color}">${F(ending.badge)}</span>\n              <span class="inline-block bg-[#ffe600] text-[#0f0b29] border border-[#0f0b29] text-[10px] px-2 py-0.5 rounded-full">덕후 칭호: ${F(ending.rank)}</span>\n            </div>\n            ${ending.story.map(p => `<p class="mb-2.5">${F(p)}</p>`).join("")}\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs font-bold">\n            <div class="text-[11px] font-black text-rose-600 mb-1.5">🎬 7년 덕질 명장면 BEST 3</div>\n            <ol class="flex flex-col gap-1.5 text-gray-800">\n              ${ending.scenes.map((sc, i) => `<li class="flex gap-1.5"><b class="text-rose-500 shrink-0">${i + 1}.</b><span>${F(sc)}</span></li>`).join("")}\n            </ol>\n          </div>\n\n          <div class="bg-[#e0f2fe] border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs font-bold">\n            <div class="text-[11px] font-black text-sky-700 mb-1.5">💬 ${gameState.bias.name}의 마지막 버블</div>\n            <div class="retro-bubble-chat rounded-xl rounded-tl-none p-2.5 leading-relaxed">${ending === ENDINGS.BLACKLIST ? "" : meVocative()}${F(ending.bubble)}</div>\n            <div class="text-[11px] font-black text-amber-700 mt-2.5 mb-1">🐥 덕친 민지의 한마디</div>\n            <div class="bg-[#fffbeb] border-2 border-[#0f0b29] rounded-xl p-2.5 leading-relaxed">${hasCustomMe() ? meVocative() : ""}${F(ending.friend)}</div>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-[10px] font-bold">\n            <div class="text-[11px] font-black text-indigo-600 mb-1.5">📊 7년 덕질 결산 영수증</div>\n            <div class="grid grid-cols-2 gap-1.5 mb-2">\n              <div class="bg-indigo-50 rounded-lg p-1.5 border border-indigo-200">💿 사들인 앨범 <b class="text-indigo-700">${albums.toLocaleString()}장</b></div>\n              <div class="bg-emerald-50 rounded-lg p-1.5 border border-emerald-200">🎧 누적 스밍 <b class="text-emerald-700">${streams}회</b></div>\n              <div class="bg-rose-50 rounded-lg p-1.5 border border-rose-200">✍️ 대면 팬싸 <b class="text-rose-700">${fanSigns}회</b></div>\n              <div class="bg-sky-50 rounded-lg p-1.5 border border-sky-200">💬 받은 버블 <b class="text-sky-700">${bubbleCount}통</b></div>\n              <div class="bg-amber-50 rounded-lg p-1.5 border border-amber-200">💸 추정 덕질 비용 <b class="text-amber-700">${spent.toLocaleString()}만원</b></div>\n              <div class="bg-fuchsia-50 rounded-lg p-1.5 border border-fuchsia-200">📈 최종 음원 순위 <b class="text-fuchsia-700">${gameState.streaming.rank}위</b></div>\n            </div>\n            <div class="bg-rose-50 p-2 rounded-xl border border-rose-200 grid grid-cols-3 gap-1 text-center">\n              <div><span class="text-rose-500 block">💖 라포</span><b class="text-xs text-rose-700">${s.rapport}</b></div>\n              <div><span class="text-cyan-600 block">🎵 네임드</span><b class="text-xs text-cyan-700">${s.influence}</b></div>\n              <div><span class="text-emerald-600 block">🏢 스탭 신뢰</span><b class="text-xs text-emerald-700">${s.agency}</b></div>\n              <div><span class="text-purple-600 block">💣 멘붕</span><b class="text-xs text-purple-700">${s.stress}%</b></div>\n              <div><span class="text-amber-600 block">💎 남은 자금</span><b class="text-xs text-amber-700">${s.money}만</b></div>\n              <div><span class="text-rose-600 block">🔥 열정</span><b class="text-xs text-rose-700">${s.passion}</b></div>\n            </div>\n          </div>\n\n          <div class="flex flex-col gap-2 pb-2">\n            <button id="save-result-btn" class="retro-btn !bg-[#ff2d75] !text-white min-h-[48px] text-sm">결과 이미지 저장하기</button>\n            <div class="grid grid-cols-2 gap-2">\n              <button id="restart-btn" class="retro-btn !bg-white !text-[#0f0b29] min-h-[48px] text-sm">다시 하기</button>\n              <button id="share-result-btn" class="retro-btn !bg-white !text-[#0f0b29] min-h-[48px] text-sm">결과 복사하기</button>\n            </div>\n          </div>\n          <p class="text-center text-[9px] text-gray-400 font-bold pb-2 leading-snug">※ 이 게임은 가상의 덕질 시뮬레이션이에요.<br>등장하는 그룹·인물·사건은 실제와 관련이 없어요.</p>\n          <footer class="lumi-ft">쓸데없이 진심인 B급 콘텐츠<br>최애 덕질 생존기 × <a href="https://lumimori38.github.io/">©루미 오락실</a> · lumimori38</footer>\n        </div>\n      `;
+    viewport.innerHTML = `\n        <div class="flex-1 flex flex-col p-3 overflow-y-auto max-w-xl mx-auto w-full break-keep" style="background:${ending.bg}">\n          <div class="text-center mb-3">\n            <span class="bg-[#0f0b29] text-[#ffe600] font-black text-[10px] px-2 py-0.5 rounded-full inline-block mb-1.5">FINAL DEOKJIL REPORT · ENDING ${ending.no}/8</span>\n            <div class="text-[11px] font-black text-gray-600 mb-1">${josa(getMyName(), "와")} ${gameState.bias.name}의 7년</div>\n            <div class="inline-block text-[10px] font-black tracking-wider px-2 py-0.5 rounded border-2 border-[#0f0b29] mb-1" style="background:${ending.color}; color:#fff">★ ${titleParts.kind}</div>\n            <h2 class="text-[22px] sm:text-2xl font-black leading-snug px-2" style="color:${ending.color}; text-wrap:balance; word-break:keep-all">${titleParts.main}</h2>\n            <p class="text-[11px] text-gray-700 font-bold mt-1.5 px-3 leading-snug" style="text-wrap:balance; word-break:keep-all">${F(ending.subtitle)}</p>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl px-2 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-1 mb-3 shadow-[3px_3px_0_#0f0b29]">\n            <div class="flex flex-col items-center text-center">\n              <canvas id="ending-bias-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>\n              <span class="text-[12px] font-black text-rose-600 leading-tight">${gameState.bias.name}</span>\n              <span class="text-[9px] font-bold text-gray-500">내 최애</span>\n            </div>\n            <div class="flex items-center justify-center gap-1 px-1">\n              <span class="text-2xl leading-none">${iconParts[0]}</span>\n              <span class="text-[11px] font-black text-gray-400 tracking-tighter">·⇄·</span>\n              <span class="text-2xl leading-none">${iconParts[1] || ""}</span>\n            </div>\n            <div class="flex flex-col items-center text-center">\n              <canvas id="ending-player-canvas" width="48" height="48" class="w-14 h-14 bg-rose-50 border-2 border-[#0f0b29] rounded-lg mb-1" style="image-rendering:pixelated"></canvas>\n              <span class="text-[12px] font-black text-gray-800 leading-tight">${getMyName()}</span>\n              <span class="text-[9px] font-bold text-gray-500">7년차 덕후</span>\n            </div>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 sm:p-4 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs text-gray-800 leading-relaxed font-bold">\n            <div class="flex flex-wrap gap-1 mb-2">\n              <span class="inline-block text-white text-[10px] px-2 py-0.5 rounded-full" style="background:${ending.color}">${F(ending.badge)}</span>\n              <span class="inline-block bg-[#ffe600] text-[#0f0b29] border border-[#0f0b29] text-[10px] px-2 py-0.5 rounded-full">덕후 칭호: ${F(ending.rank)}</span>\n            </div>\n            ${ending.story.map(p => `<p class="mb-2.5">${F(p)}</p>`).join("")}\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs font-bold">\n            <div class="text-[11px] font-black text-rose-600 mb-1.5">🎬 7년 덕질 명장면 BEST 3</div>\n            <ol class="flex flex-col gap-1.5 text-gray-800">\n              ${ending.scenes.map((sc, i) => `<li class="flex gap-1.5"><b class="text-rose-500 shrink-0">${i + 1}.</b><span>${F(sc)}</span></li>`).join("")}\n            </ol>\n          </div>\n\n          <div class="bg-[#e0f2fe] border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-xs font-bold">\n            <div class="text-[11px] font-black text-sky-700 mb-1.5">💬 ${gameState.bias.name}의 마지막 버블</div>\n            <div class="retro-bubble-chat rounded-xl rounded-tl-none p-2.5 leading-relaxed">${ending === ENDINGS.BLACKLIST ? "" : meVocative()}${F(ending.bubble)}</div>\n            <div class="text-[11px] font-black text-amber-700 mt-2.5 mb-1">🐥 덕친 민지의 한마디</div>\n            <div class="bg-[#fffbeb] border-2 border-[#0f0b29] rounded-xl p-2.5 leading-relaxed">${hasCustomMe() ? meVocative() : ""}${F(ending.friend)}</div>\n          </div>\n\n          <div class="bg-white border-[3px] border-[#0f0b29] rounded-2xl p-3 shadow-[3px_3px_0_#0f0b29] mb-3 text-[10px] font-bold">\n            <div class="text-[11px] font-black text-indigo-600 mb-1.5">📊 7년 덕질 결산 영수증</div>\n            <div class="grid grid-cols-2 gap-1.5 mb-2">\n              <div class="bg-indigo-50 rounded-lg p-1.5 border border-indigo-200">💿 사들인 앨범 <b class="text-indigo-700">${albums.toLocaleString()}장</b></div>\n              <div class="bg-emerald-50 rounded-lg p-1.5 border border-emerald-200">🎧 누적 스밍 <b class="text-emerald-700">${streams}회</b></div>\n              <div class="bg-rose-50 rounded-lg p-1.5 border border-rose-200">✍️ 대면 팬싸 <b class="text-rose-700">${fanSigns}회</b></div>\n              <div class="bg-sky-50 rounded-lg p-1.5 border border-sky-200">💬 받은 버블 <b class="text-sky-700">${bubbleCount}통</b></div>\n              <div class="bg-amber-50 rounded-lg p-1.5 border border-amber-200">💸 추정 덕질 비용 <b class="text-amber-700">${spent.toLocaleString()}만원</b></div>\n              <div class="bg-fuchsia-50 rounded-lg p-1.5 border border-fuchsia-200">📈 최종 음원 순위 <b class="text-fuchsia-700">${gameState.streaming.rank}위</b></div>\n            </div>\n            <div class="bg-rose-50 p-2 rounded-xl border border-rose-200 grid grid-cols-3 gap-1 text-center">\n              <div><span class="text-rose-500 block">💖 라포</span><b class="text-xs text-rose-700">${s.rapport}</b></div>\n              <div><span class="text-cyan-600 block">🎵 네임드</span><b class="text-xs text-cyan-700">${s.influence}</b></div>\n              <div><span class="text-emerald-600 block">🏢 스탭 신뢰</span><b class="text-xs text-emerald-700">${s.agency}</b></div>\n              <div><span class="text-purple-600 block">💣 멘붕</span><b class="text-xs text-purple-700">${s.stress}%</b></div>\n              <div><span class="text-amber-600 block">💎 남은 자금</span><b class="text-xs text-amber-700">${s.money}만</b></div>\n              <div><span class="text-rose-600 block">🔥 열정</span><b class="text-xs text-rose-700">${s.passion}</b></div>\n            </div>\n          </div>\n\n          <div class="flex flex-col gap-2 pb-2">\n            <button id="save-result-btn" class="retro-btn !bg-[#ff2d75] !text-white min-h-[48px] text-sm">결과 이미지 저장하기</button>\n            <div class="grid grid-cols-2 gap-2">\n              <button id="restart-btn" class="retro-btn !bg-white !text-[#0f0b29] min-h-[48px] text-sm">다시 하기</button>\n              <button id="share-result-btn" class="retro-btn !bg-white !text-[#0f0b29] min-h-[48px] text-sm">결과 복사하기</button>\n            </div>\n          </div>\n          <p class="text-center text-[9px] text-gray-400 font-bold pb-2 leading-snug">※ 이 게임은 가상의 덕질 시뮬레이션이에요.<br>등장하는 그룹·인물·사건은 실제와 관련이 없어요.</p>\n          <footer class="lumi-ft">쓸데없이 진심인 B급 콘텐츠<br>최애 덕질 생존기 × <a href="https://lumimori38.github.io/">©루미 오락실</a> · lumimori38</footer>\n        </div>\n      `;
     drawPixelSprite(document.getElementById("ending-bias-canvas").getContext("2d"), 0, 0, 48, {
         hair: gameState.bias.hair,
         cloth: gameState.bias.cloth,
@@ -6620,9 +6835,22 @@ function renderEnding() {
         sound.click();
         lumiCopy(copyBody, document.getElementById("share-result-btn"));
     };
+    const cardData = {
+        no: ending.no,
+        kind: titleParts.kind,
+        title: plainTitle,
+        subtitle: F(ending.subtitle),
+        color: ending.color,
+        bg: ending.bg,
+        icons: iconParts,
+        badge: F(ending.badge),
+        rank: F(ending.rank),
+        bubble: (ending === ENDINGS.BLACKLIST ? "" : meVocative()) + F(ending.bubble),
+        stats: s
+    };
     document.getElementById("save-result-btn").onclick = () => {
         sound.click();
-        lumiSave(document.getElementById("ending-card"), ending.bg, document.getElementById("save-result-btn"));
+        lumiSaveCard(cardData, document.getElementById("save-result-btn"));
     };
     document.getElementById("restart-btn").onclick = resetGame;
 }
@@ -7247,7 +7475,7 @@ window.onload = () => {
 </script>
 <div id="lumi-imgv" class="hidden fixed inset-0 z-[200] bg-black/85 flex-col items-center justify-center p-4 gap-3">
   <p class="text-white text-xs font-bold">이미지를 꾹 눌러 저장하세요</p>
-  <img id="lumi-imgv-img" alt="최애 덕질 생존기 엔딩 이미지" class="max-w-full max-h-[75vh] rounded-xl border-2 border-white">
+  <img id="lumi-imgv-img" alt="최애 덕질 생존기 엔딩 이미지" class="max-w-full max-h-[75vh] rounded-xl border-2 border-white" style="image-rendering:auto">
   <button onclick="document.getElementById('lumi-imgv').classList.add('hidden');document.getElementById('lumi-imgv').classList.remove('flex')" class="retro-btn !bg-white !text-[#0f0b29] px-6 py-2 text-sm">닫기</button>
 </div>
 </body>
